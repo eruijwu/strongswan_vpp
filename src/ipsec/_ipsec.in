@@ -216,6 +216,9 @@ start)
 	fi
 	exec $IPSEC_STARTER --daemon $DAEMON_NAME "$@"
 	;;
+conf)
+        exec $IPSEC_STARTER --test-conf
+        ;;	
 status|statusall)
 	op="$1"
 	# Return value is slightly different for the status command:

@@ -512,6 +512,11 @@ METHOD(socket_t, sender, status_t,
 
 	/* send data */
 	sport = src->get_port(src);
+        do {
+        int dport = dst->get_port(src);
+	DBG2(DBG_NET, "sport   %u,dport, %u, this->port %u, this->natt %u ", 
+                sport, dport, this->port, this->natt);
+        }while(0);
 	family = dst->get_family(dst);
 	if (sport == 0 || sport == this->port)
 	{

@@ -38,6 +38,11 @@ pid_t starter_charon_pid(void)
 	return _charon_pid;
 }
 
+void set_charon_pid(int pid)
+{
+	_charon_pid = pid;
+}
+
 void starter_charon_sigchild(pid_t pid, int status)
 {
 	if (pid == _charon_pid)

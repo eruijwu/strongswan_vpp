@@ -39,6 +39,10 @@ struct private_socket_vpp_socket_t {
      * Configured IKEv2 port
      */
     uint16_t port;
+    /**
+     * Configured port for NAT-T (or random, if initially 0)
+     */
+    uint16_t natt;
 
     /**
      * maximum packet size to receive
@@ -145,7 +149,7 @@ METHOD(socket_t, receiver, status_t,
             DBG1(DBG_NET, "error reading vpp socket: %s", strerror(errno));
             return FAILED;
         }
-        DBG3(DBG_NET, "received vpp packet %b", buf, bytes_read);
+        DBG1(DBG_NET, "received vpp packet %b", buf, bytes_read);
 
         raw = chunk_create(buf, bytes_read);
         packet = ip_packet_create(raw);
@@ -194,6 +198,7 @@ METHOD(socket_t, sender, status_t,
     }
 
     DBG2(DBG_NET, "sending vpp packet: from %#H to %#H", src, dst);
+//    DBG1(DBG_NET, "sending vpp packet %b", (char *)data.ptr, data.len);
 
     family = dst->get_family(dst);
 
@@ -214,6 +219,13 @@ METHOD(socket_t, sender, status_t,
         return FAILED;
     }
     raw = ip_packet->get_encoding(ip_packet);
+    do {
+    int sport = src->get_port(src);
+    int dport = dst->get_port(src);
+    DBG1(DBG_NET, "sending vpp packet %b", (char *)raw.ptr, raw.len);
+    DBG2(DBG_NET, "sport %u, dport %u, this->port %u ", 
+            sport, dport, this->port );
+    }while(0);
     memset(&msg, 0, sizeof(struct msghdr));
     iov[0].iov_base = &packetdesc;
     iov[0].iov_len = sizeof(packetdesc);
@@ -240,7 +252,9 @@ METHOD(socket_t, sender, status_t,
 METHOD(socket_t, get_port, uint16_t,
     private_socket_vpp_socket_t *this, bool nat)
 {
-    return this->port;
+    DBG1(DBG_NET, "nat %u, this->natt %u, this->port %u", nat, this->natt, this->port);
+    //return this->port;
+    return nat ? this->natt : this->port;
 }
 
 METHOD(socket_t, supported_families, socket_family_t,
@@ -260,6 +274,62 @@ METHOD(socket_t, destroy, void,
 /*
  * See header for description
  */
+#if 1 
+#define CONTROL_PING_MESSAGE "control_ping"
+u32 list_msg_id_all() {
+    api_main_t * am = &api_main;
+    hash_pair_t *hp;
+    return 0;
+
+    hash_foreach_pair (hp, am->msg_index_by_name_and_crc,
+    ({
+        char *key = (char *)hp->key; // key format: name_crc
+        int i = *(int *)hp->value; // key format: name_crc
+        int msg_name_len = strlen(key) - 9; // ignore crc
+        printf("[%3d] : key %s \n", i, key);
+    }));
+
+    return 0;
+}
+
+u32 find_msg_id_str(char* msg) {
+    api_main_t * am = &api_main;
+    hash_pair_t *hp;
+
+    hash_foreach_pair (hp, am->msg_index_by_name_and_crc,
+    ({
+        char *key = (char *)hp->key; // key format: name_crc
+        int i = *(int *)hp->value; // key format: name_crc
+        int msg_name_len = strlen(key) - 9; // ignore crc
+        if (strlen(msg) == msg_name_len &&
+        strncmp(msg, (char *)hp->key, msg_name_len) == 0) {
+            printf("[%3d] : key %s \n", i, key);
+            return (u32)hp->value[0];
+        }
+    }));
+
+    return 0;
+}
+
+u32 find_msg_id_int(int msg) {
+    api_main_t * am = &api_main;
+    hash_pair_t *hp;
+
+    hash_foreach_pair (hp, am->msg_index_by_name_and_crc,
+    ({
+        char *key = (char *)hp->key; // key format: name_crc
+        int i = *(int *)hp->value; // key format: name_crc
+        int msg_name_len = strlen(key) - 9; // ignore crc
+        if (msg == i) {
+            printf("[%3d] : key %s \n", i, key);
+            return (u32)hp->value[0];
+        }
+    }));
+
+    return 0;
+}
+
+#endif
 socket_vpp_socket_t *socket_vpp_socket_create()
 {
     private_socket_vpp_socket_t *this;
@@ -268,6 +338,7 @@ socket_vpp_socket_t *socket_vpp_socket_create()
     vl_api_punt_socket_register_t *mp;
     vl_api_punt_socket_register_reply_t *rmp;
 
+    DBG1(DBG_KNL, "socket_vpp_socket_create INIT");
     INIT(this,
         .public = {
             .socket = {
@@ -282,6 +353,8 @@ socket_vpp_socket_t *socket_vpp_socket_create()
                             "%s.max_packet", PACKET_MAX_DEFAULT, lib->ns),
         .port = lib->settings->get_int(lib->settings, "%s.port",
                             CHARON_UDP_PORT, lib->ns),
+        .natt = lib->settings->get_int(lib->settings,
+                                                "%s.port_nat_t", CHARON_NATT_PORT, lib->ns),
     );
 
     read_path = lib->settings->get_str(lib->settings,
@@ -295,6 +368,12 @@ socket_vpp_socket_t *socket_vpp_socket_create()
     /* Register IPv4 punt socket for IKEv2 port in VPP */
     mp = vl_msg_api_alloc(sizeof(*mp));
     memset(mp, 0, sizeof(*mp));
+    list_msg_id_all();
+    //u32 ping_id=find_msg_id(CONTROL_PING_MESSAGE);
+    //mp->_vl_msg_id = ntohs(ping_id);
+    //DBG1(DBG_LIB, "ping_id %u", ping_id); 
+    DBG1(DBG_LIB, "VL_API_PUNT_SOCKET_REGISTER %u", VL_API_PUNT_SOCKET_REGISTER);
+        
     mp->_vl_msg_id = ntohs(VL_API_PUNT_SOCKET_REGISTER);
     mp->header_version = ntohl(1);
     mp->punt.ipv = 4;
@@ -325,7 +404,8 @@ socket_vpp_socket_t *socket_vpp_socket_create()
         DBG1(DBG_LIB, "register vpp ip6 punt socket faield %d", ntohl(rmp->retval));
         return NULL;
     }
-    DBG3(DBG_LIB, "vpp punt socket %s", rmp->pathname);
+    DBG1(DBG_LIB, "vpp punt socket %s", rmp->pathname);
+    DBG1(DBG_LIB, "init this->natt %u, this->port %u", this->natt, this->port);
 
     this->sock = socket(AF_UNIX, SOCK_DGRAM, 0);
     if (this->sock < 0)

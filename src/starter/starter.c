@@ -340,6 +340,7 @@ static void usage(char *name)
 			"               [--conf <path to ipsec.conf>]\n");
 	exit(LSB_RC_INVALID_ARGUMENT);
 }
+extern void set_charon_pid(int pid);
 
 int main (int argc, char **argv)
 {
@@ -370,6 +371,11 @@ int main (int argc, char **argv)
 		if (streq(argv[i], "--debug"))
 		{
 			current_loglevel = 2;
+		}
+		else if (streq(argv[i], "--test-conf"))
+		{
+		        printf("test-conf \n");
+                        set_charon_pid(1);
 		}
 		else if (streq(argv[i], "--debug-more"))
 		{
@@ -541,7 +547,55 @@ int main (int argc, char **argv)
 		cleanup();
 		exit(LSB_RC_SUCCESS);
 	}
+//        set_charon_pid(1);
+        if (starter_charon_pid())
+        {
+                for (ca = cfg->ca_first; ca; ca = ca->next)
+                {
+                        if (ca->state == STATE_TO_ADD)
+                        {
+                                if (starter_charon_pid())
+                                {
+                                        starter_stroke_add_ca(ca);
+                                }
+                                ca->state = STATE_ADDED;
+                        }
+                }
 
+                for (conn = cfg->conn_first; conn; conn = conn->next)
+                {
+                        if (conn->state == STATE_TO_ADD)
+                        {
+                                if (conn->id == 0)
+                                {
+                                        /* affect new unique id */
+                                        conn->id = id++;
+                                }
+                                if (starter_charon_pid())
+                                {
+                                        starter_stroke_add_conn(cfg, conn);
+                                }
+                                conn->state = STATE_ADDED;
+
+                                if (conn->startup == STARTUP_START)
+                                {
+                                        if (starter_charon_pid())
+                                        {
+                                                starter_stroke_initiate_conn(conn);
+                                        }
+                                }
+                                else if (conn->startup == STARTUP_ROUTE)
+                                {
+                                        if (starter_charon_pid())
+                                        {
+                                                starter_stroke_route_conn(conn);
+                                        }
+                                }
+                        }
+                }
+                printf("test config");
+                return;
+        }
 	/* fork if we're not debugging stuff */
 	if (!no_fork)
 	{
@@ -588,7 +642,7 @@ int main (int argc, char **argv)
 			fclose(fd);
 		}
 	}
-
+#if 0
 	/* we handle these signals only in pselect() */
 	memset(&action, 0, sizeof(action));
 	sigemptyset(&action.sa_mask);
@@ -621,7 +675,7 @@ int main (int argc, char **argv)
 
 	/* empty mask for pselect() call below */
 	sigemptyset(&action.sa_mask);
-
+#endif
 	for (;;)
 	{
 		/*

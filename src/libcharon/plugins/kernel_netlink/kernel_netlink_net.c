@@ -2611,6 +2611,12 @@ static status_t manage_srcroute(private_kernel_netlink_net_t *this,
 
 	netlink_add_attribute(hdr, RTA_DST, dst_net, sizeof(request));
 	chunk = src_ip->get_address(src_ip);
+
+//
+	DBG1(DBG_KNL, "manage_srcroute if_name %s", if_name);
+        DBG1(DBG_KNL, "manage_srcroute dst_net 0x%x", *(int *)dst_net.ptr);
+        DBG1(DBG_KNL, "manage_srcroute src_ip  0x%x", *(int *)chunk.ptr);
+//
 	netlink_add_attribute(hdr, RTA_PREFSRC, chunk, sizeof(request));
 	if (gateway && gateway->get_family(gateway) == src_ip->get_family(src_ip))
 	{
@@ -2661,6 +2667,8 @@ METHOD(kernel_net_t, add_route, status_t,
 		.src_ip = src_ip,
 		.if_name = if_name,
 	};
+
+	DBG1(DBG_KNL, "add_route if_name %s", if_name);
 
 	this->routes_lock->lock(this->routes_lock);
 	found = this->routes->get(this->routes, &route);

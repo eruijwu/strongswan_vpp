@@ -545,7 +545,7 @@ static status_t update_usebytes(private_child_sa_t *this, bool inbound)
 											  &bytes, &packets, &time);
 			if (status == SUCCESS)
 			{
-				if (bytes > this->my_usebytes)
+				if (1)//(bytes > this->my_usebytes)
 				{
 					this->my_usebytes = bytes;
 					this->my_usepackets = packets;

@@ -214,7 +214,10 @@ static void vac_api_handler (private_vac_t *this, void *msg)
         ip = (void*)msg;
         seq = (uintptr_t)ip->context;
     }
-    DBG3(DBG_KNL, "vac read msg ID %d len %d seq %u", id, l, seq);
+    if (id != VL_API_CONTROL_PING_REPLY){
+            DBG3(DBG_KNL, "vac read msg ID %d len %d seq %u", id, l, seq);
+            find_msg_id_int(id);
+    }
     this->entries_lock->lock(this->entries_lock);
     entry = this->entries->get(this->entries, (void*)seq);
     if (entry)
@@ -225,7 +228,7 @@ static void vac_api_handler (private_vac_t *this, void *msg)
             {
                 entry->complete = TRUE;
                 entry->condvar->signal(entry->condvar);
-                DBG3(DBG_KNL, "vac received control ping");
+                //DBG3(DBG_KNL, "vac received control ping");
                 vac_free(msg);
                 this->entries_lock->unlock(this->entries_lock);
                 return;
@@ -386,7 +389,8 @@ static status_t vac_write(private_vac_t *this, char *p, int l, uint32_t ctx)
         vac_free(mp);
         return FAILED;
     }
-    DBG3(DBG_KNL, "vac write msg ID %d len %d", ntohs(mp->_vl_msg_id), l);
+    //too many
+    //DBG3(DBG_KNL, "vac write msg ID %d len %d", ntohs(mp->_vl_msg_id), l);
 
     return SUCCESS;
 }
@@ -529,6 +533,7 @@ METHOD(vac_t, register_event, status_t, private_vac_t *this, char *in,
 vac_t *vac_create(char *name)
 {
     private_vac_t *this;
+    DBG1(DBG_KNL, "vac_create INIT");
 
     INIT(this,
             .public = {
@@ -550,6 +555,10 @@ vac_t *vac_create(char *name)
             .events = hashtable_create(hashtable_hash_ptr, hashtable_equals_ptr, 4),
             .seq = 0,
     );
+
+    //clib_mem_init (0, 64ULL << 10);
+    clib_mem_init_thread_safe (0, 64ULL << 20);
+
 
     if (vl_client_api_map("/vpe-api"))
     {

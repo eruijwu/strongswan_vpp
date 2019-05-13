@@ -647,6 +647,50 @@ METHOD(daemon_t, set_default_loggers, void,
 	this->mutex->unlock(this->mutex);
 }
 
+void show_level(int group)
+{
+private_daemon_t *this=charon;
+//bus_t *bus=this->bus;
+enumerator_t *enumerator;
+logger_entry_t *entry;
+int level;
+
+
+/* we set the loglevel on ALL loggers */
+this->mutex->lock(this->mutex);
+enumerator = this->loggers->create_enumerator(this->loggers);
+while (enumerator->enumerate(enumerator, &entry))
+{
+        //DBG1(DBG_KNL, "%-28s : %s ", "target", entry->target);
+        //DBG1(DBG_KNL, "%-28s : %u ", "type", entry->type);
+	switch (entry->type)
+	{
+		case FILE_LOGGER:
+                        level = entry->logger.file->logger.get_level(&entry->logger.file->logger, group);
+			break;
+		case SYS_LOGGER:
+                        level = entry->logger.sys->logger.get_level(&entry->logger.sys->logger, group);
+			break;
+		case CUSTOM_LOGGER:
+                        level = entry->logger.custom->logger.get_level(&entry->logger.file->logger, group);
+			break;
+	}
+        DBG1(DBG_KNL, "%-6u %-10s %-6u %-6u ", group,entry->target, entry->type, level);
+}
+enumerator->destroy(enumerator);
+this->mutex->unlock(this->mutex);
+}
+
+void list_level()
+{
+        int group;
+        
+        DBG1(DBG_KNL, "%-6s %-10s %-6s %-6s ", "group","target", "type", "level");
+	for (group = 0; group < DBG_MAX; group++)
+	{
+		show_level(group);
+	}
+}
 METHOD(daemon_t, set_level, void,
 	private_daemon_t *this, debug_t group, level_t level)
 {

@@ -116,6 +116,9 @@ static iface_t* address2entry(private_kernel_vpp_net_t *this, host_t *ip)
 /**
  * Add or remove a route
  */
+
+extern u32 g_interface;
+
 static status_t manage_route(private_kernel_vpp_net_t *this, bool add,
                              chunk_t dst, uint8_t prefixlen, host_t *gtw,
                              char *name)
@@ -127,6 +130,13 @@ static status_t manage_route(private_kernel_vpp_net_t *this, bool add,
     vl_api_ip_add_del_route_t *mp;
     vl_api_ip_add_del_route_reply_t *rmp;
     bool exists = FALSE;
+
+    if (g_interface){
+            DBG1(DBG_KNL, " -- manage_route g_interface return");
+
+    return SUCCESS;
+    }
+
 
     this->mutex->lock(this->mutex);
     enumerator = this->ifaces->create_enumerator(this->ifaces);
@@ -363,7 +373,190 @@ static host_t *get_route(private_kernel_vpp_net_t *this, host_t *dest,
     free(out);
     return addr;
 }
+#if 1
+uint32_t g_tap_sw_if_index=0;
+status_t 
+vapi_sock_tap_create(uint32_t address)
+//(Int32 if_id, char *if_name, IpAddr address, Uint8 address_len)
+{
+    vl_api_tap_create_v2_t *mp;
+    vl_api_tap_create_v2_reply_t *rmp;
+    char *out;
+    int out_len;
+    char if_name[]="tap10";
+    uint32_t if_id=10;
+    mp = vl_msg_api_alloc(sizeof(*mp));
+    mp->_vl_msg_id = ntohs(VL_API_TAP_CREATE_V2);
+    mp->id = ntohl (if_id);
 
+	mp->use_random_mac = 1;
+	mp->host_mac_addr_set = 0;
+	mp->host_bridge_set = 0;
+	mp->host_ip6_addr_set = 0;
+	mp->host_ip4_gw_set = 0;
+	mp->host_ip6_gw_set = 0;
+	//mp->id = if_id;
+	mp->host_if_name_set = 1;
+	mp->host_ip4_addr_set = 1;
+	strncpy((char *)mp->host_if_name, if_name, strlen(if_name));
+	memcpy(mp->host_ip4_addr, &address, sizeof(address));
+	mp->host_ip4_prefix_len = 32;
+
+    if (vac->send(vac, (char *)mp, sizeof(*mp), &out, &out_len))
+    {
+            DBG1(DBG_KNL, "vac send failed");
+        vl_msg_api_free(mp);
+        return FAILED;
+    }
+    rmp = (void *)out;
+    vl_msg_api_free(mp);
+    if (rmp->retval)
+    {
+            DBG1(DBG_KNL, "%vac recv failed %d", ntohl(rmp->retval));
+        free(out);
+        return FAILED;
+    }
+    g_tap_sw_if_index = ntohl(rmp->sw_if_index);
+    free(out);
+    DBG1(DBG_KNL, "%vac recv g_tap_sw_if_index %u", g_tap_sw_if_index);
+    return SUCCESS;
+}
+
+
+status_t 
+vapi_interface_state_set(bool up, u32 sw_if_index)
+{
+    vl_api_sw_interface_set_flags_t *mp;
+    vl_api_sw_interface_set_flags_reply_t *rmp;
+    char *out;
+    int out_len;
+    uint32_t if_id=sw_if_index;//g_tap_sw_if_index;
+    //bool up=1;
+
+    mp = vl_msg_api_alloc(sizeof(*mp));
+    mp->_vl_msg_id = ntohs(VL_API_SW_INTERFACE_SET_FLAGS);
+
+
+	mp->sw_if_index = ntohl(if_id);
+	mp->admin_up_down = up;
+
+    //vl_api_sw_interface_set_flags_t_endian(mp);
+
+    if (vac->send(vac, (char *)mp, sizeof(*mp), &out, &out_len))
+    {
+            DBG1(DBG_KNL, "vac send failed");
+        vl_msg_api_free(mp);
+        return FAILED;
+    }
+    rmp = (void *)out;
+    vl_msg_api_free(mp);
+    if (rmp->retval)
+    {
+            DBG1(DBG_KNL, "%vac recv failed %d", ntohl(rmp->retval));
+        free(out);
+        return FAILED;
+    }
+    free(out);
+    return SUCCESS;
+
+}
+
+status_t 
+vapi_add_del_address(uint32_t address)
+{
+    vl_api_sw_interface_add_del_address_t *mp;
+    vl_api_sw_interface_add_del_address_reply_t *rmp;
+    char *out;
+    int out_len;
+    uint32_t if_index=g_tap_sw_if_index; 
+    //Uint8 address_len=32;
+    bool is_add=1;
+
+    mp = vl_msg_api_alloc(sizeof(*mp));
+    
+    mp->_vl_msg_id = ntohs(VL_API_SW_INTERFACE_ADD_DEL_ADDRESS);
+	mp->sw_if_index = ntohl(if_index);
+	mp->is_ipv6 = 0;
+	mp->del_all = 0;
+	mp->address_length = 32;
+	memcpy (mp->address, &address, sizeof(address));
+	if (is_add) {
+		mp->is_add = 1;
+	} else {
+		mp->is_add = 0;
+	}
+
+    //vl_api_sw_interface_add_del_address_t_endian(mp);
+    
+    if (vac->send(vac, (char *)mp, sizeof(*mp), &out, &out_len))
+    {
+            DBG1(DBG_KNL, "vac send failed");
+        vl_msg_api_free(mp);
+        return FAILED;
+    }
+    rmp = (void *)out;
+    vl_msg_api_free(mp);
+    if (rmp->retval)
+    {
+            DBG1(DBG_KNL, "%vac recv failed %d", ntohl(rmp->retval));
+        free(out);
+        return FAILED;
+    }
+    free(out);
+    return SUCCESS;
+	
+}
+
+
+status_t 
+vapi_tap_delete()
+{
+    vl_api_tap_delete_v2_t *mp;
+    vl_api_tap_delete_v2_reply_t *rmp;
+    char *out;
+    int out_len;
+    uint32_t if_index=g_tap_sw_if_index;
+
+    mp = vl_msg_api_alloc(sizeof(*mp));
+    mp->_vl_msg_id = ntohs(VL_API_TAP_DELETE_V2);
+
+	mp->sw_if_index = ntohl(if_index);
+
+    //vl_api_tap_delete_v2_t_endian(mp);
+
+    if (vac->send(vac, (char *)mp, sizeof(*mp), &out, &out_len))
+    {
+        DBG1(DBG_KNL, "vac send failed");
+        vl_msg_api_free(mp);
+        return FAILED;
+    }
+    rmp = (void *)out;
+    vl_msg_api_free(mp);
+    if (rmp->retval)
+    {
+        DBG1(DBG_KNL, "%vac recv failed %d", ntohl(rmp->retval));
+        free(out);
+        return FAILED;
+    }
+    free(out);
+    return SUCCESS;
+	
+
+}
+
+void vapi_add_ip(uint32_t addr)
+{
+        bool up=1;
+
+        vapi_sock_tap_create(addr);
+        vapi_interface_state_set(up, g_tap_sw_if_index);
+        vapi_add_del_address(addr);
+}
+void vapi_del_ip()
+{
+        vapi_tap_delete();
+}
+#endif
 METHOD(enumerator_t, addr_enumerate, bool, addr_enumerator_t *this, va_list args)
 {
     iface_t *entry;
@@ -461,14 +654,27 @@ METHOD(kernel_net_t, add_ip, status_t,
     private_kernel_vpp_net_t *this, host_t *virtual_ip, int prefix,
     char *iface_name)
 {
-    return NOT_SUPPORTED;
+    chunk_t addr_chunk;
+    uint32_t addr;
+    
+    DBG1(DBG_KNL, "VPP add_ip virtual IP %H prefix %u, %s, iface_name %s",
+             virtual_ip, prefix, iface_name);
+    addr_chunk = virtual_ip->get_address(virtual_ip);
+    memcpy(&addr, addr_chunk.ptr, 4);
+    DBG1(DBG_KNL, "VPP add_ip addr %x",addr);
+    vapi_add_ip(addr);
+    return SUCCESS;
+    //return NOT_SUPPORTED;
 }
 
 METHOD(kernel_net_t, del_ip, status_t,
     private_kernel_vpp_net_t *this, host_t *virtual_ip, int prefix,
     bool wait)
 {
-    return NOT_SUPPORTED;
+    DBG1(DBG_KNL, "VPP del_ip ");
+    vapi_del_ip();
+    return SUCCESS;
+    //return NOT_SUPPORTED;
 }
 
 METHOD(kernel_net_t, add_route, status_t,
@@ -528,7 +734,7 @@ static void update_addrs(private_kernel_vpp_net_t *this, iface_t *entry)
         addrs->insert_last(addrs, host);
     }
     vl_msg_api_free(mp);
-    free(out);
+    /////////////free(out);
     mp = vl_msg_api_alloc(sizeof(*mp));
     mp->_vl_msg_id = ntohs(VL_API_IP_ADDRESS_DUMP);
     mp->sw_if_index = ntohl(entry->index);
@@ -587,7 +793,7 @@ static void event_cb(char *data, int data_len, void *ctx)
     }
     enumerator->destroy(enumerator);
     this->mutex->unlock(this->mutex);
-    free(data);
+    //free(data);
 }
 
 /**
@@ -643,7 +849,7 @@ static void *net_update_thread_fn(private_kernel_vpp_net_t *this)
             }
             enumerator->destroy(enumerator);
             this->mutex->unlock(this->mutex);
-            free(out);
+            //////////free(out);
         }
         vl_msg_api_free(mp);
 
@@ -663,7 +869,7 @@ static void *net_update_thread_fn(private_kernel_vpp_net_t *this)
 
         }
 
-        sleep(5);
+        sleep(150);
     }
     return NULL;
 }
